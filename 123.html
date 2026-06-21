@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>술술 안주 - AI 브랜드별 안주 추천</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0f0d1a">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<style>
+:root{--bg:#0f0d1a;--card:#1c1830;--accent:#ff7a59;--accent2:#ffd166;--txt:#f5f3ff;--sub:#a99fc7;}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
+body{background:radial-gradient(circle at 20% 0%,#2a1f45,#0f0d1a 60%);color:var(--txt);min-height:100vh;padding:20px;}
+.wrap{max-width:680px;margin:0 auto; position: relative;}
+header{text-align:center;padding:24px 0 12px;}
+h1{font-size:30px;letter-spacing:-1px;}h1 span{color:var(--accent);}
+.tag{color:var(--sub);margin-top:8px;font-size:14px;}
+.badge{display:inline-block;margin-top:10px;background:#2c2548;color:var(--accent2);font-size:12px;padding:5px 12px;border-radius:20px;}
+.drop{margin-top:20px;border:2px dashed #4a3f6e;border-radius:20px;padding:36px 20px;text-align:center;background:var(--card);cursor:pointer;transition:.2s;}
+.drop:hover{border-color:var(--accent);background:#241f3d;}.drop.drag{border-color:var(--accent2);background:#2c2548;}
+.drop .ico{font-size:46px;}.drop p{margin-top:10px;color:var(--sub);font-size:14px;}
+#preview{display:none;margin-top:18px;text-align:center;}
+#preview img{max-width:100%;max-height:260px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
+.status{display:none;margin-top:16px;text-align:center;color:var(--accent2);font-size:14px;}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid #4a3f6e;border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes sp{to{transform:rotate(360deg);}}
+.detect{display:none;margin-top:14px;background:#241f3d;border-radius:12px;padding:12px 16px;font-size:13px;color:var(--sub);text-align:center;}
+.detect b{color:var(--accent2);}
+.sel{display:none;margin-top:16px;}
+.sel h3{font-size:13px;color:var(--sub);margin-bottom:10px;font-weight:500;text-align:center;}
+.chiprow{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}
+.chip{background:var(--card);border:1px solid #3a3257;color:var(--txt);padding:9px 16px;border-radius:30px;cursor:pointer;font-size:14px;transition:.15s;}
+.chip:hover{border-color:var(--accent);}.chip.on{background:var(--accent);border-color:var(--accent);color:#1a1320;font-weight:700;}
+.result{margin-top:20px;display:none;}
+.rhead{background:var(--card);border-radius:18px;padding:20px;border:1px solid #2e2748;animation:up .4s ease;}
+.rhead h2{font-size:21px;display:flex;align-items:center;gap:8px;}
+.rhead .desc{color:var(--sub);font-size:13px;margin-top:6px;line-height:1.5;}
+@keyframes up{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+.cat{margin-top:14px;background:var(--card);border-radius:18px;padding:16px 18px;border:1px solid #2e2748;animation:up .4s ease;}
+.cat .ct{font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px;color:var(--accent2);}
+.menu{margin-top:12px;display:grid;gap:10px;}
+.item{display:flex;gap:12px;align-items:flex-start;background:#241f3d;padding:12px;border-radius:12px;position:relative;} /* position 추가 */
+.item .emo{font-size:25px;}.item .nm{font-weight:700;font-size:15px;display:flex;align-items:center;}
+.item .rs{color:var(--accent2);font-size:12px;margin-top:2px;}
+.item .why{color:var(--sub);font-size:12px;margin-top:3px;line-height:1.5;}
+
+/* 유저 추가 안주 전용 스타일 */
+.user-cat { border-color: var(--accent); background: rgba(255, 122, 89, 0.05); }
+.user-cat .ct { color: var(--accent); }
+.u-badge { font-size: 11px; background: rgba(255, 122, 89, 0.15); color: var(--accent); padding: 3px 8px; border-radius: 8px; margin-left: 8px; font-weight: normal; letter-spacing: -0.5px; }
+
+/* 수정/삭제 버튼 추가 */
+.action-btns { position:absolute; top:12px; right:12px; display:flex; gap:6px; }
+.action-btns button { background:transparent; border:none; color:var(--sub); cursor:pointer; font-size:13px; transition:0.2s; }
+.action-btns button:hover { color:var(--txt); transform:scale(1.1); }
+
+footer{text-align:center;color:#5b5278;font-size:12px;margin:30px 0 10px;}
+
+/* 사용자 추가 버튼 및 모달 스타일 */
+.add-btn-wrap { text-align:center; margin-top:20px; animation:up .4s ease; }
+.add-btn { background:transparent; border:2px dashed #4a3f6e; color:var(--txt); padding:12px 24px; border-radius:30px; cursor:pointer; font-size:14px; transition:0.2s; font-weight:600; width:100%; max-width:300px; }
+.add-btn:hover { background:#241f3d; border-color:var(--accent2); color:var(--accent2); }
+
+.modal-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100; justify-content:center; align-items:center; padding:20px; backdrop-filter:blur(4px); }
+.modal { background:var(--card); width:100%; max-width:400px; padding:24px; border-radius:18px; border:1px solid #4a3f6e; box-shadow:0 10px 40px rgba(0,0,0,0.8); animation:up .3s ease; }
+.modal h3 { color:var(--txt); margin-bottom:16px; font-size:18px; text-align:center; }
+.m-input { width:100%; padding:12px; margin-bottom:12px; background:#241f3d; border:1px solid #3a3257; color:var(--txt); border-radius:10px; font-size:14px; outline:none; transition:0.2s; }
+.m-input:focus { border-color:var(--accent); }
+.m-btn-row { display:flex; gap:10px; margin-top:10px; }
+.m-btn { flex:1; padding:12px; border:none; border-radius:10px; cursor:pointer; font-weight:bold; font-size:14px; transition:0.2s; }
+.btn-cancel { background:#3a3257; color:var(--sub); }
+.btn-cancel:hover { background:#4a3f6e; color:var(--txt); }
+.btn-submit { background:var(--accent); color:#1a1320; }
+.btn-submit:hover { opacity:0.9; transform:translateY(-1px); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>🍶 술<span>술</span> 안주</h1>
+<p class="tag">술 사진을 올리면 AI가 인식하고, 브랜드별 맞춤 안주를 추천해요!</p>
+<span class="badge" id="modelBadge">⏳ AI 모델 및 DB 연결 중...</span>
+</header>
+<div class="drop" id="drop">
+<div class="ico">📷</div>
+<p><b>사진 촬영 / 파일 올리기</b><br>탭하면 AI가 술 종류를 인식합니다</p>
+<input type="file" id="file" accept="image/*" capture="environment" hidden>
+</div>
+<div id="preview"><img id="pimg" alt="preview" crossorigin="anonymous"></div>
+<div class="status" id="status"><span class="spin"></span>AI가 사진을 분석하는 중...</div>
+<div class="detect" id="detect"></div>
+<div class="sel" id="typeSel"><h3>① 술 종류 (AI가 못 맞췄다면 직접 선택)</h3><div class="chiprow" id="typeRow"></div></div>
+<div class="sel" id="brandSel"><h3>② 브랜드를 선택하세요</h3><div class="chiprow" id="brandRow"></div></div>
+<div class="result" id="result"></div>
+<footer>술술 안주 · AI 자동 인식 · 브랜드별 추천 🍻</footer>
+
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h3 id="modalTitle">💡 나만의 안주 추천하기</h3>
+    <select id="m-cat" class="m-input">
+      <option value="food">🍳 음식</option>
+      <option value="snack">🍪 과자</option>
+      <option value="fruit">🍓 과일</option>
+      <option value="light">🍿 가벼운 간식</option>
+    </select>
+    <input type="text" id="m-emo" class="m-input" placeholder="이모지 한 개 (예: 🍕)" maxlength="2">
+    <input type="text" id="m-nm" class="m-input" placeholder="안주 이름 (예: 페퍼로니 피자)">
+    <select id="m-rs" class="m-input">
+      <option value="★★★★★">★★★★★ (인생 조합!)</option>
+      <option value="★★★★☆">★★★★☆ (추천해요)</option>
+      <option value="★★★☆☆">★★★☆☆ (무난해요)</option>
+    </select>
+    <input type="text" id="m-why" class="m-input" placeholder="추천하는 이유를 짧게 적어주세요">
+    <input type="password" id="m-pwd" class="m-input" placeholder="비밀번호 4자리 (수정/삭제용)" maxlength="4">
+    
+    <div class="m-btn-row">
+      <button class="m-btn btn-cancel" onclick="closeModal()">취소</button>
+      <button class="m-btn btn-submit" onclick="submitPairing()">추천하기</button>
+    </div>
+  </div>
+</div>
+
+</div>
+<script>
+// ------------------------------------------------------------------
+// 🔥 [필수] 여기에 발급받은 Firebase 설정 코드를 붙여넣으세요!
+const firebaseConfig = {
+  apiKey: "AIzaSyCBYf1XWfWvKXdd0pcEKJHZxyLam0f4dGI",
+  authDomain: "sulanzu.firebaseapp.com",
+  projectId: "sulanzu",
+  storageBucket: "sulanzu.firebasestorage.app",
+  messagingSenderId: "469188934158",
+  appId: "1:469188934158:web:86ba77659bbcfd54f6da5f",
+  measurementId: "G-N25WV7QFRT"
+};
+// ------------------------------------------------------------------
+
+let database = null;
+if (firebaseConfig.apiKey) {
+  firebase.initializeApp(firebaseConfig);
+  database = firebase.database();
+}
+
+const CAT={food:{t:"음식",e:"🍳"},snack:{t:"과자",e:"🍪"},fruit:{t:"과일",e:"🍓"},light:{t:"간식",e:"🍿"}};
+function A(emo,nm,rs,why){return{emo,nm,rs,why};}
+
+// 유저가 제시한 원본 DB 그대로 유지
+const DB={
+beer:{name:"맥주",emoji:"🍺",brands:{
+ "카스":{d:"가볍고 청량한 국산 라거",cats:{food:[A("🍗","양념치킨","★★★★★","톡 쏘는 탄산이 매콤달콤 양념을 깔끔히 정리"),A("🌶️","불닭·낙지볶음","★★★★☆","매운맛을 청량감이 식혀줌")],snack:[A("🥔","포카칩","★★★★☆","짭짤한 감자칩이 가벼운 라거와 무한루프")],fruit:[A("🍋","레몬","★★★☆☆","한 조각이면 청량감 배가")],light:[A("🐟","먹태·쥐포","★★★★★","고소·짭짤 마른안주의 정석")]}},
+ "테라":{d:"청정라거 컨셉, 부드러운 탄산",cats:{food:[A("🥩","삼겹살","★★★★★","'테슬라(테라+참이슬)'의 단짝, 기름기 정리"),A("🍗","후라이드","★★★★☆","바삭함과 부드러운 탄산 조화")],snack:[A("🌽","나초","★★★★☆","치즈 곁들인 나초와 잘 맞음")],fruit:[A("🍍","파인애플","★★★☆☆","산뜻한 단맛")],light:[A("🍿","팝콘","★★★★☆","가볍게 즐기기 좋음")]}},
+ "칭따오":{d:"홉향 은은한 중국 대표 라거",cats:{food:[A("🍢","양꼬치","★★★★★","쯔란향 양꼬치와는 칭따오가 국룰"),A("🌶️","마라샹궈","★★★★☆","얼얼한 마라를 청량하게 중화")],snack:[A("🥜","훠궈맛 스낵","★★★☆☆","중화풍 스낵과 결이 맞음")],fruit:[A("🍊","귤","★★★☆☆","개운한 마무리")],light:[A("🥟","군만두","★★★★☆","바삭한 만두와 찰떡")]}},
+ "기네스":{d:"진하고 크리미한 흑맥주(스타우트)",cats:{food:[A("🦪","굴","★★★★★","스타우트+굴은 유럽의 클래식 페어링"),A("🍲","비프 스튜","★★★★☆","로스팅 풍미가 진한 고기요리와 조화")],snack:[A("🍫","초콜릿 쿠키","★★★★☆","커피·초콜릿 노트와 통함")],fruit:[A("🍒","체리","★★★☆☆","다크한 과실향과 어울림")],light:[A("🧀","체다치즈","★★★★☆","진한 치즈가 묵직함을 받쳐줌")]}},
+ "아사히":{d:"드라이하고 깔끔한 일본 라거",cats:{food:[A("🍣","사시미","★★★★★","깔끔한 드라이함이 회의 신선함을 살림"),A("🥟","교자","★★★★☆","바삭한 군만두와 일식 조합")],snack:[A("🍘","센베이","★★★★☆","고소한 쌀과자와 결이 같음")],fruit:[A("🍐","배","★★★☆☆","맑고 시원한 단맛")],light:[A("🫛","에다마메","★★★★☆","이자카야 기본 간식")]}}
+}},
+soju:{name:"소주",emoji:"🍾",brands:{
+ "참이슬":{d:"깔끔하고 부드러운 대표 소주",cats:{food:[A("🥩","삼겹살","★★★★★","고기와 소주의 영원한 국룰"),A("🍲","김치찌개","★★★★★","칼칼한 국물이 한 잔을 부름")],snack:[A("🍘","새우깡","★★★☆☆","짭짤하게 입맛 돋움")],fruit:[A("🍅","방울토마토","★★★☆☆","상큼하게 뒤끝 정리")],light:[A("🍳","계란말이","★★★★☆","담백한 기본 안주")]}},
+ "처음처럼":{d:"순하고 부드러운 목넘김",cats:{food:[A("🐙","낙지볶음","★★★★☆","매콤한 감칠맛과 균형"),A("🍖","제육볶음","★★★★☆","달큰매콤함과 잘 맞음")],snack:[A("🥔","포카칩","★★★☆☆","가볍게 곁들이기")],fruit:[A("🥒","오이","★★★☆☆","아삭하게 입가심")],light:[A("🌰","번데기","★★★★☆","감칠맛 클래식 간식")]}},
+ "진로":{d:"뉴트로 감성, 약간의 단맛",cats:{food:[A("🍗","닭발","★★★★☆","불맛 닭발과 달큰한 소주"),A("🥘","곱창","★★★★☆","고소한 기름기 정리")],snack:[A("🍿","먹태깡","★★★★☆","요즘 핫한 과자 조합")],fruit:[A("🍈","참외","★★★☆☆","달콤 아삭")],light:[A("🦑","골뱅이무침","★★★★☆","새콤매콤 소면과 함께")]}}
+}},
+makgeolli:{name:"막걸리",emoji:"🥛",brands:{
+ "장수막걸리":{d:"구수하고 균형잡힌 국민 막걸리",cats:{food:[A("🫓","파전·김치전","★★★★★","비 오는 날의 소울푸드"),A("🌶️","두부김치","★★★★☆","포근한 두부와 조화")],snack:[A("🍘","누룽지칩","★★★☆☆","구수함이 닮음")],fruit:[A("🍐","배","★★★★☆","시원달콤 단맛 조화")],light:[A("🥜","도토리묵","★★★★☆","담백한 전통 간식")]}},
+ "느린마을막걸리":{d:"단맛 적고 깔끔한 프리미엄",cats:{food:[A("🦪","보쌈","★★★★★","담백한 수육과 산뜻한 신맛"),A("🐟","굴전","★★★★☆","고소한 전과 조화")],snack:[A("🌾","한과","★★★☆☆","은은한 단맛과 어울림")],fruit:[A("🍇","청포도","★★★★☆","깔끔한 산미 강조")],light:[A("🫛","풋콩","★★★☐☆","가벼운 간식")]}},
+ "지평막걸리":{d:"부드럽고 깔끔한 인기 막걸리",cats:{food:[A("🍢","어묵탕","★★★★☆","따뜻한 국물과 조화"),A("🫓","해물파전","★★★★★","해물 감칠맛과 찰떡")],snack:[A("🍘","쌀과자","★★★☆☆","구수한 결")],fruit:[A("🍈","참외","★★★☆☆","아삭달콤")],light:[A("🥜","땅콩","★★★★☆","고소한 기본 간식")]}}
+}},
+wine_red:{name:"레드와인",emoji:"🍷",brands:{
+ "카베르네 소비뇽":{d:"묵직한 탄닌과 진한 바디",cats:{food:[A("🥩","스테이크","★★★★★","붉은 고기가 강한 탄닌을 부드럽게"),A("🍖","양갈비","★★★★☆","진한 육향과 조화")],snack:[A("🧀","숙성 체다","★★★★☆","진한 치즈가 바디를 맞춤")],fruit:[A("🍇","말린 무화과","★★★★☆","건과의 농축된 단맛")],light:[A("🍫","다크초콜릿","★★★★★","카카오 쌉쌀함과 과실향 결합")]}},
+ "메를로":{d:"부드럽고 둥근 탄닌, 자두향",cats:{food:[A("🍗","로스트 치킨","★★★★☆","부드러운 바디와 가벼운 고기"),A("🍝","미트 파스타","★★★★☆","토마토 소스와 잘 맞음")],snack:[A("🫒","올리브","★★★☆☆","짭조름한 균형")],fruit:[A("🍓","딸기","★★★★☆","과실향 증폭")],light:[A("🥜","호두","★★★★☆","고소함과 조화")]}},
+ "모스카토":{d:"달콤하고 가벼운 스위트 와인",cats:{food:[A("🧀","리코타 샐러드","★★★★☆","가벼운 단맛과 신선함"),A("🍤","새우 카나페","★★★☆☆","산뜻한 핑거푸드")],snack:[A("🍪","버터 쿠키","★★★★☆","달콤끼리 디저트 페어링")],fruit:[A("🍑","복숭아","★★★★★","향긋한 단맛 최고 조합")],light:[A("🍫","화이트초콜릿","★★★★☆","부드러운 단맛")]}}
+}},
+wine_white:{name:"화이트와인",emoji:"🥂",brands:{
+ "샤르도네":{d:"풍부한 바디와 버터·오크향",cats:{food:[A("🦞","버터 랍스터","★★★★★","크리미한 풍미끼리 환상"),A("🐔","크림 치킨","★★★★☆","오크향과 크림소스 조화")],snack:[A("🧀","브리치즈 크래커","★★★★☆","부드러운 치즈와 매칭")],fruit:[A("🍈","멜론","★★★★☆","향긋한 단맛")],light:[A("🥗","시저샐러드","★★★★☆","담백하게 어울림")]}},
+ "소비뇽 블랑":{d:"상큼한 산미와 허브향",cats:{food:[A("🦐","해산물 파스타","★★★★★","산미가 비린맛 잡고 감칠맛 살림"),A("🐟","흰살생선 구이","★★★★☆","담백함과 딱")],snack:[A("🥨","프레첼","★★★☆☆","짠맛이 산미를 부드럽게")],fruit:[A("🍏","청사과","★★★★★","산뜻한 산미가 닮음")],light:[A("🥗","리코타 샐러드","★★★★☆","신선한 채소와 가볍게")]}},
+ "리슬링":{d:"산뜻한 산미와 은은한 단맛",cats:{food:[A("🌶️","매콤 태국요리","★★★★★","단맛이 매운맛을 진정시킴"),A("🍣","초밥","★★★★☆","섬세한 균형")],snack:[A("🧀","크림치즈 크래커","★★★★☆","부드럽게 받쳐줌")],fruit:[A("🍑","복숭아","★★★★☆","향긋함 더함")],light:[A("🍤","새우 카나페","★★★☆☆","산뜻한 핑거푸드")]}}
+}},
+whisky:{name:"위스키",emoji:"🥃",brands:{
+ "발렌타인":{d:"부드럽고 균형잡힌 블렌디드 스카치",cats:{food:[A("🍖","훈제 고기","★★★★☆","스모키 풍미와 통함"),A("🧀","숙성 치즈","★★★★☆","진한 풍미 조화")],snack:[A("🍪","버터 쿠키","★★★★☆","버터향이 바닐라 노트와")],fruit:[A("🍊","말린 살구","★★★★☆","건과 단맛과 어울림")],light:[A("🍫","다크초콜릿","★★★★★","오크·바닐라향과 환상 결합")]}},
+ "조니워커":{d:"스모키함이 살아있는 블렌디드",cats:{food:[A("🐟","훈제연어","★★★★★","스모키끼리 풍미 증폭"),A("🍖","바비큐 립","★★★★☆","불향과 잘 맞음")],snack:[A("🥨","짭짤한 크래커","★★★☆☆","알코올 강도 완화")],fruit:[A("🍎","사과","★★★☆☆","상큼하게 환기")],light:[A("🥜","육포·견과","★★★★☆","고소·짭짤함이 부드럽게")]}},
+ "맥캘란":{d:"셰리 오크의 풍부한 과실·꿀향 싱글몰트",cats:{food:[A("🦆","오리 요리","★★★★☆","풍부한 풍미와 조화"),A("🧀","블루치즈","★★★★★","강렬한 풍미끼리 증폭")],snack:[A("🍪","쇼트브레드","★★★★☆","버터향 과자와 매칭")],fruit:[A("🍇","건포도·무화과","★★★★★","셰리향 건과와 찰떡")],light:[A("🍫","밀크초콜릿","★★★★☆","꿀향과 부드러운 단맛")]}},
+ "호세 쿠엘보(데킬라)":{d:"멕시코 대표 데킬라, 강렬·청량",cats:{food:[A("🌮","타코","★★★★★","멕시칸 정통 조합"),A("🌶️","나초·살사","★★★★☆","매콤함과 청량 조화")],snack:[A("🌽","콘칩","★★★★☆","옥수수 스낵과 결이 같음")],fruit:[A("🍋","라임","★★★★★","소금+라임은 데킬라 정석 의식"),A("🍊","오렌지","★★★☆☆","과실 산미 환기")],light:[A("🧂","소금","★★★★☆","샷+소금+라임 클래식")]}}
+}},
+sake:{name:"사케",emoji:"🍶",brands:{
+ "다사이(獺祭)":{d:"화사한 과실향의 준마이다이긴조",cats:{food:[A("🍣","사시미","★★★★★","섬세한 향이 회를 살림"),A("🦐","흰살생선 카르파초","★★★★☆","산뜻한 조화")],snack:[A("🍘","센베이","★★★☆☆","고소한 쌀과자")],fruit:[A("🍇","청포도","★★★★☆","화사한 과실향 강조")],light:[A("🫛","에다마메","★★★★☆","깔끔한 기본 간식")]}},
+ "쥰마이(일반 준마이)":{d:"쌀의 감칠맛이 진한 사케",cats:{food:[A("🍢","오뎅탕","★★★★★","데운 사케와 따뜻한 국물"),A("🍤","텐푸라","★★★★☆","기름기를 산미가 정리")],snack:[A("🍘","쌀과자","★★★★☆","결이 같음")],fruit:[A("🍐","배","★★★☆☆","맑은 단맛")],light:[A("🐟","구운 생선","★★★★☆","감칠맛 조화")]}}
+}},
+champagne:{name:"샴페인/스파클링",emoji:"🍾",brands:{
+ "모엣 샹동":{d:"화사하고 균형잡힌 대표 샴페인",cats:{food:[A("🦪","굴","★★★★★","미네랄과 기포의 폭발적 조화"),A("🍤","튀김류","★★★★☆","기포가 기름기를 씻음")],snack:[A("🧀","치즈 크래커","★★★★☆","가벼운 짠맛 매칭")],fruit:[A("🍓","딸기","★★★★★","축하 자리 정석 페어링")],light:[A("🥐","카나페","★★★★☆","핑거푸드와 화사함")]}},
+ "베르데호/까바(스파클링)":{d:"가성비 좋은 상큼한 스파클링",cats:{food:[A("🍤","감바스","★★★★☆","해산물과 산뜻하게"),A("🥓","하몬","★★★★☆","스페인식 조합")],snack:[A("🍿","트러플 팝콘","★★★☆☆","의외의 찰떡")],fruit:[A("🍑","복숭아","★★★★☆","향긋한 단맛")],light:[A("🧀","만체고 치즈","★★★★☆","고소하게 마무리")]}}
+}},
+highball:{name:"하이볼",emoji:"🥤",brands:{
+ "산토리 가쿠빈 하이볼":{d:"부드럽고 청량한 일식 하이볼",cats:{food:[A("🍗","가라아게","★★★★★","이자카야 정석 조합"),A("🍢","야키토리","★★★★☆","숯불향과 탄산감")],snack:[A("🍟","감자튀김","★★★★☆","느끼함을 잡음")],fruit:[A("🍋","레몬","★★★★★","하이볼 레몬향과 시너지")],light:[A("🐟","먹태","★★★★☆","짭짤 마른안주")]}},
+ "짐빔 하이볼":{d:"버번 베이스의 달큰·청량",cats:{food:[A("🍖","바비큐","★★★★☆","버번 단향과 불맛"),A("🍔","수제버거","★★★★☆","육즙과 청량감")],snack:[A("🥔","감자칩","★★★☆☆","짭짤하게 당김")],fruit:[A("🍊","귤","★★★☆☆","산미 환기")],light:[A("🍿","팝콘","★★★★☆","가볍게 즐김")]}}
+}}
+};
+
+let model=null, curType=null, curBrand=null, editingId=null;
+
+/* --- 🌟 파이어베이스 데이터 실시간 동기화 (localStorage 대체) --- */
+if (database) {
+  database.ref('userCats').on('value', (snapshot) => {
+    const data = snapshot.val() || {};
+    for(const type in DB) {
+      for(const brand in DB[type].brands) {
+        DB[type].brands[brand].userCats = (data[type] && data[type][brand]) ? data[type][brand] : [];
+      }
+    }
+    // 현재 열려있는 탭이 있다면 화면 새로고침
+    if (curType && curBrand) renderBrand(curType, curBrand, null);
+  });
+} else {
+  alert("경고: Firebase 설정이 필요합니다. 설정 전에는 데이터를 저장/불러오기 할 수 없습니다.");
+}
+
+const order=["beer","soju","makgeolli","wine_red","wine_white","whisky","sake","champagne","highball"];
+const MAP=[
+ {kw:["beer glass","beer bottle","beer"],type:"beer"},
+ {kw:["champagne","sparkling"],type:"champagne"},
+ {kw:["white wine","chardonnay"],type:"wine_white"},
+ {kw:["red wine","wine bottle","wine"],type:"wine_red"},
+ {kw:["whiskey","whisky","scotch","cognac","brandy","bourbon"],type:"whisky"},
+ {kw:["tequila"],type:"whisky"},
+ {kw:["sake","rice wine"],type:"sake"},
+ {kw:["cocktail shaker","cocktail","highball","tumbler"],type:"highball"},
+ {kw:["pop bottle","soda bottle","water bottle","flask"],type:"soju"},
+ {kw:["goblet","glass","cup"],type:"soju"}
+];
+
+const typeRow=document.getElementById('typeRow');
+order.forEach(k=>{const c=document.createElement('div');c.className='chip';c.textContent=DB[k].emoji+' '+DB[k].name;c.onclick=()=>{pickType(k,true);};typeRow.appendChild(c);});
+
+mobilenet.load().then(m=>{model=m;document.getElementById('modelBadge').textContent="✅ AI 인식 및 DB 준비 완료";}).catch(()=>{document.getElementById('modelBadge').textContent="⚠️ AI 모델 로드 실패 (수동 선택)";});
+
+const drop=document.getElementById('drop'),file=document.getElementById('file');
+drop.onclick=()=>file.click();
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('drag');});
+drop.addEventListener('dragleave',e=>{e.preventDefault();drop.classList.remove('drag');});
+drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('drag');if(e.dataTransfer.files[0])show(e.dataTransfer.files[0]);});
+file.onchange=()=>{if(file.files[0])show(file.files[0]);};
+function show(f){const r=new FileReader();r.onload=e=>{const img=document.getElementById('pimg');img.src=e.target.result;document.getElementById('preview').style.display='block';img.onload=()=>classify(img,f.name);};r.readAsDataURL(f);}
+
+async function classify(img,fname){
+ const det=document.getElementById('detect'),st=document.getElementById('status');
+ det.style.display='none';document.getElementById('result').style.display='none';document.getElementById('brandSel').style.display='none';
+ document.getElementById('typeSel').style.display='block';
+ const n=(fname||'').toLowerCase();
+ for(const k of order){if(n.includes(k)||n.includes(DB[k].name)){det.style.display='block';det.innerHTML=`📁 파일명 인식: <b>${DB[k].name}</b>`;pickType(k,false);return;}}
+ if(!model){det.style.display='block';det.innerHTML='⚠️ AI 모델 준비 안됨. 종류를 직접 선택하세요.';return;}
+ st.style.display='block';
+ try{
+  const preds=await model.classify(img,5);st.style.display='none';
+  let found=null,lbl='';
+  for(const p of preds){const l=p.className.toLowerCase();for(const m of MAP){if(m.kw.some(k=>l.includes(k))){found=m.type;lbl=p.className;break;}}if(found)break;}
+  if(found){det.style.display='block';det.innerHTML=`🤖 AI 인식: "<b>${lbl}</b>" → <b>${DB[found].name}</b>`;pickType(found,false);}
+  else{det.style.display='block';det.innerHTML=`🤖 술 종류를 확실히 구분하지 못했어요. (인식: ${preds[0].className}) 직접 선택해주세요.`;}
+ }catch(e){st.style.display='none';det.style.display='block';det.innerHTML='⚠️ 분석 오류. 직접 선택하세요.';}
+}
+
+function pickType(k,scroll){
+ curType=k;
+ document.querySelectorAll('#typeRow .chip').forEach(c=>c.classList.toggle('on',c.textContent.includes(DB[k].name)));
+ const br=document.getElementById('brandRow');br.innerHTML='';
+ Object.keys(DB[k].brands).forEach(b=>{const c=document.createElement('div');c.className='chip';c.textContent=b;c.onclick=()=>renderBrand(k,b,c);br.appendChild(c);});
+ document.getElementById('brandSel').style.display='block';
+ document.getElementById('result').style.display='none';
+ if(scroll)document.getElementById('brandSel').scrollIntoView({behavior:'smooth'});
+}
+
+function renderBrand(k,b,chip){
+ if(chip){
+   document.querySelectorAll('#brandRow .chip').forEach(c=>c.classList.remove('on'));
+   chip.classList.add('on');
+ }
+ curBrand = b;
+ const d=DB[k],br=d.brands[b],res=document.getElementById('result');
+ let h=`<div class="rhead"><h2>${d.emoji} ${b}</h2><div class="desc">${d.name} · ${br.d}</div></div>`;
+ 
+ // 1. AI 기본 안주 목록 렌더링
+ ["food","snack","fruit","light"].forEach(c=>{
+  if(!br.cats[c]||!br.cats[c].length)return;
+  h+=`<div class="cat"><div class="ct">${CAT[c].e} ${CAT[c].t}</div><div class="menu">`;
+  br.cats[c].forEach(it=>{h+=`<div class="item"><div class="emo">${it.emo}</div><div><div class="nm">${it.nm}</div><div class="rs">${it.rs}</div><div class="why">${it.why}</div></div></div>`;});
+  h+=`</div></div>`;
+ });
+
+ // 2. 사용자가 추가한 안주 목록 렌더링 (파이어베이스 연동)
+ if(br.userCats && br.userCats.length > 0) {
+  h+=`<div class="cat user-cat"><div class="ct">👤 유저 추천 안주</div><div class="menu">`;
+  br.userCats.forEach(it=>{
+    const catBadge = `<span class="u-badge">${CAT[it.cat].e} ${CAT[it.cat].t}</span>`;
+    h+=`<div class="item">
+          <div class="emo">${it.emo}</div>
+          <div><div class="nm">${it.nm} ${catBadge}</div><div class="rs">${it.rs}</div><div class="why">${it.why}</div></div>
+          <div class="action-btns">
+            <button onclick="editItem('${it.id}')">✏️</button>
+            <button onclick="deleteItem('${it.id}')">🗑️</button>
+          </div>
+        </div>`;
+  });
+  h+=`</div></div>`;
+ }
+ 
+ // 3. 사용자 안주 추가 버튼
+ h += `<div class="add-btn-wrap"><button class="add-btn" onclick="openModal()">+ 나만의 안주 추천 추가하기</button></div>`;
+ 
+ res.innerHTML=h;res.style.display='block';
+ if(chip) res.scrollIntoView({behavior:'smooth'}); 
+}
+
+/* --- 🌟 모달 제어 (추가/수정 모드 지원) --- */
+function openModal(item = null) {
+  document.getElementById('addModal').style.display = 'flex';
+  if(item) {
+    document.getElementById('modalTitle').textContent = "✏️ 안주 추천 수정하기";
+    document.getElementById('m-cat').value = item.cat;
+    document.getElementById('m-emo').value = item.emo;
+    document.getElementById('m-nm').value = item.nm;
+    document.getElementById('m-rs').value = item.rs;
+    document.getElementById('m-why').value = item.why;
+    editingId = item.id;
+  } else {
+    document.getElementById('modalTitle').textContent = "💡 나만의 안주 추천하기";
+    document.getElementById('m-emo').value = '';
+    document.getElementById('m-nm').value = '';
+    document.getElementById('m-why').value = '';
+    document.getElementById('m-pwd').value = '';
+    editingId = null;
+  }
+}
+
+function closeModal() {
+  document.getElementById('addModal').style.display = 'none';
+}
+
+/* --- 🌟 파이어베이스 데이터 저장 함수 --- */
+function submitPairing() {
+  if(!database) { alert('파이어베이스가 연결되지 않았습니다. API 키를 확인해주세요.'); return; }
+  
+  const nm = document.getElementById('m-nm').value.trim();
+  const pwd = document.getElementById('m-pwd').value.trim();
+
+  if(!nm || !pwd) {
+    alert('안주 이름과 4자리 비밀번호를 반드시 입력해주세요!');
+    return;
+  }
+
+  const brandData = DB[curType].brands[curBrand];
+  let userCats = brandData.userCats || [];
+
+  if (editingId) {
+    // 수정 모드
+    const idx = userCats.findIndex(i => i.id === editingId);
+    if(idx > -1) {
+      if(userCats[idx].pwd !== pwd) { alert('비밀번호가 틀렸습니다!'); return; }
+      userCats[idx] = {
+        ...userCats[idx],
+        cat: document.getElementById('m-cat').value,
+        emo: document.getElementById('m-emo').value || '✨',
+        nm: nm, rs: document.getElementById('m-rs').value,
+        why: document.getElementById('m-why').value
+      };
+    }
+  } else {
+    // 신규 추가 모드
+    userCats.push({
+      id: Date.now().toString(), // 고유 ID로 시간값 사용
+      cat: document.getElementById('m-cat').value,
+      emo: document.getElementById('m-emo').value || '✨',
+      nm: nm, rs: document.getElementById('m-rs').value,
+      why: document.getElementById('m-why').value,
+      pwd: pwd
+    });
+  }
+
+  // 파이어베이스에 업데이트
+  database.ref(`userCats/${curType}/${curBrand}`).set(userCats);
+  closeModal();
+}
+
+/* --- 🌟 파이어베이스 수정/삭제 권한 확인 함수 --- */
+function editItem(id) {
+  const item = DB[curType].brands[curBrand].userCats.find(i => i.id === id);
+  if(!item) return;
+  const inputPwd = prompt('수정하려면 등록할 때 입력한 비밀번호 4자리를 적어주세요.');
+  if (inputPwd === item.pwd) openModal(item);
+  else if (inputPwd !== null) alert('비밀번호가 일치하지 않습니다.');
+}
+
+function deleteItem(id) {
+  const item = DB[curType].brands[curBrand].userCats.find(i => i.id === id);
+  if(!item) return;
+  const inputPwd = prompt('삭제하려면 등록할 때 입력한 비밀번호 4자리를 적어주세요.');
+  if (inputPwd === item.pwd) {
+    if(confirm(`정말 '${item.nm}' 안주 추천을 삭제하시겠습니까?`)) {
+      const newCats = DB[curType].brands[curBrand].userCats.filter(i => i.id !== id);
+      database.ref(`userCats/${curType}/${curBrand}`).set(newCats);
+    }
+  } else if (inputPwd !== null) {
+    alert('비밀번호가 일치하지 않습니다.');
+  }
+}
+/* --- 🌟 PWA 서비스 워커 등록 (앱 설치용) --- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('서비스 워커 등록 성공!', reg.scope))
+      .catch(err => console.log('서비스 워커 등록 실패:', err));
+  });
+}
+</script>
+</body>
+</html>
