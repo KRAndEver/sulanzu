@@ -1,6 +1,6 @@
 const CACHE_NAME = 'sulsul-app-v1';
 const urlsToCache = [
-  './123.html',
+  './index.html',
   './manifest.json'
 ];
 
