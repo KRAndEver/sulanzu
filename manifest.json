@@ -1,7 +1,7 @@
 {
   "name": "술술 안주",
   "short_name": "술술 안주",
-  "start_url": "./123.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f0d1a",
   "theme_color": "#0f0d1a",
